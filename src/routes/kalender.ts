@@ -1,0 +1,129 @@
+import { Router, Request, Response, NextFunction } from 'express';
+import { getIndexData, getYearData, getYearDataOptional } from '../services/github';
+import { hitungHariKecepit, filterHolidays } from '../services/kecepit';
+import { isValidYear, isValidMonth } from '../utils/date';
+import { KecepitResponse } from '../types';
+
+const router = Router();
+
+/**
+ * GET /api/kalender
+ * Mengembalikan index.json (daftar tahun yang tersedia)
+ */
+router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const index = await getIndexData();
+    res.set('Cache-Control', 'public, max-age=300'); // 5 menit
+    res.json(index);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/kalender/:year
+ * Query opsional:
+ *   - month=1..12   → filter bulan
+ *   - type=national_holiday|joint_leave|all  (default: all)
+ */
+router.get('/:year', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const year = Number(req.params.year);
+    if (!isValidYear(year)) {
+      return res.status(400).json({ error: 'Tahun tidak valid (rentang 2000–2100)' });
+    }
+
+    const monthParam = req.query.month ? Number(req.query.month) : undefined;
+    if (monthParam !== undefined && !isValidMonth(monthParam)) {
+      return res.status(400).json({ error: 'Parameter month harus 1–12' });
+    }
+
+    const typeParam = (req.query.type as string) || 'all';
+    if (!['national_holiday', 'joint_leave', 'all'].includes(typeParam)) {
+      return res.status(400).json({
+        error: 'Parameter type harus salah satu: national_holiday, joint_leave, all',
+      });
+    }
+
+    const yearData = await getYearData(year);
+
+    res.set('Cache-Control', 'public, max-age=300'); // 5 menit
+
+    // Jika tidak ada filter, kembalikan data asli
+    if (monthParam === undefined && typeParam === 'all') {
+      return res.json(yearData);
+    }
+
+    const filtered = filterHolidays(yearData, {
+      month: monthParam,
+      type: typeParam as 'national_holiday' | 'joint_leave' | 'all',
+    });
+
+    res.json({
+      year: yearData.year,
+      source: yearData.source,
+      scraped_at: yearData.scraped_at,
+      ...filtered,
+      filters: {
+        month: monthParam ?? null,
+        type: typeParam,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/kalender/:year/kecepit
+ * Query opsional:
+ *   - month=1..12   → filter bulan
+ *
+ * Cross-year: otomatis fetch tahun ±1 (jika tersedia) agar boundary
+ * 31 Des / 1 Jan terklasifikasi dengan benar.
+ */
+router.get('/:year/kecepit', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const year = Number(req.params.year);
+    if (!isValidYear(year)) {
+      return res.status(400).json({ error: 'Tahun tidak valid (rentang 2000–2100)' });
+    }
+
+    const monthParam = req.query.month ? Number(req.query.month) : undefined;
+    if (monthParam !== undefined && !isValidMonth(monthParam)) {
+      return res.status(400).json({ error: 'Parameter month harus 1–12' });
+    }
+
+    // Fetch tahun utama + tetangga (opsional, tidak error jika 404)
+    const [yearData, prevYearData, nextYearData] = await Promise.all([
+      getYearData(year),
+      getYearDataOptional(year - 1),
+      getYearDataOptional(year + 1),
+    ]);
+
+    const kecepit = hitungHariKecepit(
+      yearData,
+      monthParam,
+      prevYearData,
+      nextYearData
+    );
+
+    res.set('Cache-Control', 'public, max-age=300'); // 5 menit
+
+    const response: KecepitResponse = {
+      year,
+      total_kecepit: kecepit.length,
+      kecepit_days: kecepit,
+    };
+
+    if (monthParam !== undefined) {
+      response.filters = { month: monthParam };
+    }
+
+    res.json(response);
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

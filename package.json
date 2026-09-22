@@ -1,0 +1,45 @@
+{
+  "name": "harpitnas-api",
+  "version": "1.1.2",
+  "description": "API kalender libur nasional & cuti bersama Indonesia + deteksi hari kecepit",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test:kecepit": "ts-node --transpile-only scripts/test-kecepit.ts",
+    "docker:build": "docker build -t harpitnas-api .",
+    "docker:run": "docker run --rm -p 3000:3000 harpitnas-api"
+  },
+  "keywords": [
+    "indonesia",
+    "libur-nasional",
+    "cuti-bersama",
+    "hari-kecepit",
+    "kalender",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^20.16.5",
+    "nodemon": "^3.1.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
