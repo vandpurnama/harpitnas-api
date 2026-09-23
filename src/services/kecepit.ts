@@ -5,6 +5,7 @@ import {
   addDays,
   getDayNameId,
   getMonthFromDateStr,
+  Workweek,
 } from '../utils/date';
 
 /**
@@ -32,6 +33,10 @@ function buildHolidayMap(...yearDatas: (YearHolidays | null | undefined)[]): Map
  * yang kedua hari tetangganya (H-1 dan H+1) adalah non-kerja
  * (libur nasional, cuti bersama, atau akhir pekan).
  *
+ * workweek:
+ * - mon-fri (default): weekend = Sabtu + Minggu
+ * - mon-sat: weekend = hanya Minggu (Sabtu dihitung hari kerja)
+ *
  * Cross-year:
  * - prevYearData / nextYearData opsional dipakai untuk cek boundary
  *   (31 Des butuh 1 Jan tahun berikutnya, 1-2 Jan butuh 31 Des tahun sebelumnya).
@@ -41,9 +46,9 @@ export function hitungHariKecepit(
   yearData: YearHolidays,
   monthFilter?: number,
   prevYearData?: YearHolidays | null,
-  nextYearData?: YearHolidays | null
+  nextYearData?: YearHolidays | null,
+  workweek: Workweek = 'mon-fri'
 ): KecepitDay[] {
-  // Gabung libur tahun berjalan + tetangga (jika ada)
   const allHolidays = buildHolidayMap(prevYearData, yearData, nextYearData);
 
   const kecepitList: KecepitDay[] = [];
@@ -55,14 +60,11 @@ export function hitungHariKecepit(
   for (let d = new Date(start); d <= end; d = addDays(d, 1)) {
     const dateStr = formatDate(d);
 
-    // Skip jika hari ini libur atau weekend
-    // (hanya pakai libur tahun berjalan untuk "hari ini",
-    //  karena kita hanya menghitung kecepit di dalam tahun ini)
-    if (allHolidays.has(dateStr) || isWeekend(d)) {
+    // Skip jika hari ini libur atau weekend (sesuai workweek)
+    if (allHolidays.has(dateStr) || isWeekend(d, workweek)) {
       continue;
     }
 
-    // Filter bulan (opsional)
     if (monthFilter !== undefined) {
       const m = d.getMonth() + 1;
       if (m !== monthFilter) continue;
@@ -75,8 +77,8 @@ export function hitungHariKecepit(
 
     const prevIsHoliday = allHolidays.has(prevStr);
     const nextIsHoliday = allHolidays.has(nextStr);
-    const prevNonWorking = prevIsHoliday || isWeekend(prevDate);
-    const nextNonWorking = nextIsHoliday || isWeekend(nextDate);
+    const prevNonWorking = prevIsHoliday || isWeekend(prevDate, workweek);
+    const nextNonWorking = nextIsHoliday || isWeekend(nextDate, workweek);
 
     if (prevNonWorking && nextNonWorking) {
       const prevLabel = prevIsHoliday

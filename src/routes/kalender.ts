@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { getIndexData, getYearData, getYearDataOptional } from '../services/github';
 import { hitungHariKecepit, filterHolidays } from '../services/kecepit';
-import { isValidYear, isValidMonth } from '../utils/date';
+import { isValidYear, isValidMonth, isValidWorkweek, Workweek } from '../utils/date';
 import { KecepitResponse } from '../types';
 
 const router = Router();
@@ -80,10 +80,12 @@ router.get('/:year', async (req: Request, res: Response, next: NextFunction): Pr
 /**
  * GET /api/kalender/:year/kecepit
  * Query opsional:
- *   - month=1..12   → filter bulan
+ *   - month=1..12
+ *   - workweek=mon-fri|mon-sat  (default: mon-fri)
+ *       mon-fri → weekend = Sabtu+Minggu (standar kantor)
+ *       mon-sat → weekend = hanya Minggu (Sabtu = hari kerja)
  *
- * Cross-year: otomatis fetch tahun ±1 (jika tersedia) agar boundary
- * 31 Des / 1 Jan terklasifikasi dengan benar.
+ * Cross-year: otomatis fetch tahun ±1 (jika tersedia).
  */
 router.get('/:year/kecepit', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -99,6 +101,15 @@ router.get('/:year/kecepit', async (req: Request, res: Response, next: NextFunct
       return;
     }
 
+    const workweekRaw = (req.query.workweek as string) || 'mon-fri';
+    if (!isValidWorkweek(workweekRaw)) {
+      res.status(400).json({
+        error: 'Parameter workweek harus mon-fri atau mon-sat',
+      });
+      return;
+    }
+    const workweek: Workweek = workweekRaw;
+
     const [yearData, prevYearData, nextYearData] = await Promise.all([
       getYearData(year),
       getYearDataOptional(year - 1),
@@ -109,7 +120,8 @@ router.get('/:year/kecepit', async (req: Request, res: Response, next: NextFunct
       yearData,
       monthParam,
       prevYearData,
-      nextYearData
+      nextYearData,
+      workweek
     );
 
     res.set('Cache-Control', 'public, max-age=300');
@@ -118,11 +130,11 @@ router.get('/:year/kecepit', async (req: Request, res: Response, next: NextFunct
       year,
       total_kecepit: kecepit.length,
       kecepit_days: kecepit,
+      filters: {
+        workweek,
+        ...(monthParam !== undefined ? { month: monthParam } : {}),
+      },
     };
-
-    if (monthParam !== undefined) {
-      response.filters = { month: monthParam };
-    }
 
     res.json(response);
   } catch (err) {

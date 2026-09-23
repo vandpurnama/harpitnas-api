@@ -51,6 +51,7 @@ export interface KecepitResponse {
   kecepit_days: KecepitDay[];
   filters?: {
     month?: number;
+    workweek?: 'mon-fri' | 'mon-sat';
   };
 }
 
@@ -58,6 +59,7 @@ export interface KecepitResponse {
 export interface CalendarQuery {
   month?: number; // 1-12
   type?: 'national_holiday' | 'joint_leave' | 'all';
+  workweek?: 'mon-fri' | 'mon-sat';
 }
 
 export interface ApiError {

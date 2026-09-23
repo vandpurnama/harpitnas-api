@@ -4,9 +4,13 @@ API backend **TypeScript** untuk menyajikan data kalender **libur nasional & cut
 
 Data diambil dari repositori [vandpurnama/harpitnas](https://github.com/vandpurnama/harpitnas) (hasil scraping SKB 3 Menteri) dan di-cache di memori.
 
+**Live demo:** https://harpitnas-api-production.up.railway.app
+
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Express](https://img.shields.io/badge/Express-4.x-lightgrey?logo=express)](https://expressjs.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+**Versi:** 1.2.0
 
 ---
 
@@ -17,6 +21,7 @@ Data diambil dari repositori [vandpurnama/harpitnas](https://github.com/vandpurn
 - Deteksi **hari kecepit** (hari kerja yang diapit dua hari non-kerja)
 - **Cross-year aware** — otomatis fetch tahun ±1 agar boundary 31 Des / 1 Jan akurat
 - Filter bulan (`?month=3`) dan tipe libur (`?type=national_holiday|joint_leave`)
+- Filter **workweek** (`?workweek=mon-fri|mon-sat`) untuk definisi hari kerja
 - Rate limiting, Helmet, CORS, logging
 - Health check endpoint
 - Docker-ready (multi-stage build + docker-compose)
@@ -36,166 +41,101 @@ Data diambil dari repositori [vandpurnama/harpitnas](https://github.com/vandpurn
 
 ### Query Parameters
 
-**`/api/kalender/:year`**
+**`GET /api/kalender/:year`**
 
-| Parameter | Nilai | Keterangan |
-|-----------|-------|------------|
-| `month` | `1`–`12` | Filter per bulan |
-| `type` | `national_holiday` \| `joint_leave` \| `all` | Filter tipe libur (default: `all`) |
+| Parameter | Nilai | Default | Keterangan |
+|-----------|-------|---------|------------|
+| `month` | `1`–`12` | — | Filter per bulan |
+| `type` | `national_holiday` \| `joint_leave` \| `all` | `all` | Filter tipe libur |
 
-**`/api/kalender/:year/kecepit`**
+**`GET /api/kalender/:year/kecepit`**
 
-| Parameter | Nilai | Keterangan |
-|-----------|-------|------------|
-| `month` | `1`–`12` | Filter per bulan |
+| Parameter | Nilai | Default | Keterangan |
+|-----------|-------|---------|------------|
+| `month` | `1`–`12` | — | Filter per bulan |
+| `workweek` | `mon-fri` \| `mon-sat` | `mon-fri` | Definisi hari kerja / weekend |
 
-### Contoh Request
+#### Arti `workweek`
+
+| Nilai | Hari kerja | Weekend | Cocok untuk |
+|-------|------------|---------|-------------|
+| `mon-fri` | Senin–Jumat | Sabtu + Minggu | Kantor, PNS (default) |
+| `mon-sat` | Senin–**Sabtu** | Hanya Minggu | Toko, pabrik, industri 6 hari |
+
+---
+
+## Contoh Request
+
+Ganti base URL sesuai environment (lokal / production).
 
 ```bash
+BASE="https://harpitnas-api-production.up.railway.app"
+
+# Info API
+curl -s "$BASE/" | jq
+
+# Health
+curl -s "$BASE/health" | jq
+
 # Index tahun
-curl https://your-api.example.com/api/kalender
+curl -s "$BASE/api/kalender" | jq
 
 # Semua libur 2026
-curl https://your-api.example.com/api/kalender/2026
+curl -s "$BASE/api/kalender/2026" | jq
 
 # Hanya libur nasional bulan Maret 2026
-curl "https://your-api.example.com/api/kalender/2026?month=3&type=national_holiday"
+curl -s "$BASE/api/kalender/2026?month=3&type=national_holiday" | jq
 
-# Hari kecepit 2026
-curl https://your-api.example.com/api/kalender/2026/kecepit
+# Hari kecepit 2026 (default: Senin–Jumat)
+curl -s "$BASE/api/kalender/2026/kecepit" | jq
 
-# Hari kecepit bulan Maret 2026
-curl "https://your-api.example.com/api/kalender/2026/kecepit?month=3"
+# Hari kecepit 2027 dengan workweek Senin–Sabtu
+curl -s "$BASE/api/kalender/2027/kecepit?workweek=mon-sat" | jq
+
+# Kecepit Januari 2027, Senin–Sabtu
+curl -s "$BASE/api/kalender/2027/kecepit?workweek=mon-sat&month=1" | jq
 ```
 
 ### Contoh Response Kecepit
 
 ```json
 {
-  "year": 2026,
-  "total_kecepit": 4,
+  "year": 2027,
+  "total_kecepit": 5,
   "kecepit_days": [
     {
-      "date": "2026-02-16",
+      "date": "2027-01-04",
       "day": "Senin",
       "name": "Hari Kecepit",
       "prevNonWorking": "Akhir Pekan",
-      "nextNonWorking": "Tahun Baru Imlek 2577 Kongzili",
-      "prevDate": "2026-02-15",
-      "nextDate": "2026-02-17"
+      "nextNonWorking": "Isra Mikraj Nabi Muhammad S.A.W.",
+      "prevDate": "2027-01-03",
+      "nextDate": "2027-01-05"
     }
-  ]
+  ],
+  "filters": {
+    "workweek": "mon-fri"
+  }
 }
 ```
+
+Dengan `?workweek=mon-sat`, **2 Januari 2027 (Sabtu)** juga masuk daftar kecepit (diapit Tahun Baru + Minggu).
 
 ---
 
 ## Definisi Hari Kecepit
 
-Hari kerja (bukan libur nasional/cuti bersama, bukan Sabtu/Minggu) yang **kedua tetangga** (H-1 dan H+1) adalah hari non-kerja (libur atau weekend).
+Hari **kerja** (bukan libur nasional/cuti bersama, bukan weekend sesuai `workweek`) yang **kedua tetangga** (H−1 dan H+1) adalah hari non-kerja (libur atau weekend).
 
-Contoh klasik:
-- Senin yang diapit Minggu (weekend) + Selasa (libur nasional)
-- Jumat yang diapit Kamis (libur) + Sabtu (weekend)
+Contoh (mode `mon-fri`):
+- Senin diapit Minggu + Selasa libur
+- Jumat diapit Kamis libur + Sabtu
 
-Algoritma juga mencatat `prevDate` / `nextDate` dan nama penyebab untuk transparansi.  
-**Cross-year**: otomatis memakai data tahun tetangga (jika tersedia) agar 31 Desember / 1 Januari terklasifikasi dengan benar.
+Contoh tambahan (mode `mon-sat`):
+- Sabtu diapit Jumat libur + Minggu
 
----
-
-## Instalasi & Menjalankan
-
-### Lokal
-
-```bash
-# Clone
-git clone https://github.com/USERNAME/harpitnas-api.git
-cd harpitnas-api
-
-# Install dependencies
-npm install
-
-# Development (hot reload)
-npm run dev
-
-# Production
-npm run build
-npm start
-
-# Uji algoritma kecepit
-npm run test:kecepit
-# atau tahun tertentu
-npx ts-node --transpile-only scripts/test-kecepit.ts 2027
-```
-
-Server default berjalan di `http://localhost:3000`.
-
-### Environment Variables
-
-| Variabel | Default | Keterangan |
-|----------|---------|------------|
-| `PORT` | `3000` | Port server |
-| `NODE_ENV` | `development` | `production` untuk mode production |
-| `CORS_ORIGIN` | `*` | Origin yang diizinkan CORS |
-| `RATE_LIMIT_MAX` | `200` | Max request per 15 menit per IP |
-| `GITHUB_RAW_BASE` | URL default harpitnas | Override base URL data (opsional) |
-
-Salin `.env.example` menjadi `.env` jika ingin mengubah nilai default.
-
----
-
-## Docker
-
-### Build & Run
-
-```bash
-docker build -t harpitnas-api .
-docker run -d \
-  --name harpitnas-api \
-  -p 3000:3000 \
-  -e NODE_ENV=production \
-  -e RATE_LIMIT_MAX=300 \
-  harpitnas-api
-```
-
-### Docker Compose
-
-```bash
-docker compose up -d --build
-docker compose logs -f
-docker compose down
-```
-
----
-
-## Struktur Project
-
-```
-harpitnas-api/
-├── src/
-│   ├── index.ts                 # Entry point Express + middleware
-│   ├── types/
-│   │   └── index.ts             # Interface TypeScript
-│   ├── routes/
-│   │   └── kalender.ts          # Route handlers + validasi query
-│   ├── services/
-│   │   ├── cache.ts             # In-memory cache (TTL 1 jam)
-│   │   ├── github.ts            # Fetch + cache data dari GitHub
-│   │   └── kecepit.ts           # Algoritma hari kecepit + filter
-│   ├── middleware/
-│   │   └── errorHandler.ts      # 404 & error handler
-│   └── utils/
-│       └── date.ts              # Helper tanggal (timezone-safe)
-├── scripts/
-│   └── test-kecepit.ts          # Script uji algoritma
-├── Dockerfile                   # Multi-stage production build
-├── docker-compose.yml
-├── .dockerignore
-├── .env.example
-├── package.json
-├── tsconfig.json
-└── README.md
-```
+Algoritma mencatat `prevDate` / `nextDate` dan nama penyebab.  
+**Cross-year**: otomatis memakai data tahun tetangga (jika tersedia) agar 31 Desember / 1 Januari akurat.
 
 ---
 
@@ -204,46 +144,76 @@ harpitnas-api/
 | Situasi | Status | Response |
 |---------|--------|----------|
 | Tahun tidak valid | `400` | `"Tahun tidak valid (rentang 2000–2100)"` |
+| `month` / `type` / `workweek` salah | `400` | Pesan validasi parameter |
 | Data tahun tidak ada di repo | `404` | `"Data tidak ditemukan"` |
 | GitHub down / timeout | `502` | `"Gagal mengambil data dari sumber (GitHub)"` |
 | Tahun tetangga tidak ada (cross-year) | `200` | Tetap jalan, fallback ke weekend check |
 
 ---
 
-## Catatan Teknis
+## Instalasi & Menjalankan
 
-- Data sumber di-update otomatis oleh GitHub Actions di repositori [vandpurnama/harpitnas](https://github.com/vandpurnama/harpitnas). API ini hanya mem-proxy + menghitung kecepit.
-- Cache in-memory hilang saat restart. Untuk produksi skala besar, ganti dengan Redis.
-- Validasi tahun dibatasi 2000–2100.
-- Rate limit default 200 req / 15 menit per IP.
-- Di development tersedia `POST /admin/clear-cache`.
+### Lokal
+
+```bash
+git clone https://github.com/vandpurnama/harpitnas-api.git
+cd harpitnas-api
+npm install
+npm run dev          # development
+npm run build && npm start   # production
+```
+
+Server default: `http://localhost:3000`.
+
+### Environment Variables
+
+| Variabel | Default | Keterangan |
+|----------|---------|------------|
+| `PORT` | `3000` | Port server |
+| `NODE_ENV` | `development` | `production` di production |
+| `CORS_ORIGIN` | `*` | Origin CORS |
+| `RATE_LIMIT_MAX` | `200` | Max request / 15 menit / IP |
+| `GITHUB_RAW_BASE` | URL harpitnas | Override base URL data (opsional) |
+
+### Docker
+
+```bash
+docker build -t harpitnas-api .
+docker run -d -p 3000:3000 -e NODE_ENV=production harpitnas-api
+# atau
+docker compose up -d --build
+```
+
+Panduan deploy resource terbatas: lihat [DEPLOY-GUIDE.md](./DEPLOY-GUIDE.md).
 
 ---
 
-## Deploy Gratis (tanpa kartu kredit)
+## Struktur Project
 
-Rekomendasi platform free tier yang mendukung Node.js / Docker:
-
-| Platform | Catatan |
-|----------|---------|
-| [Render](https://render.com) | Paling praktis. 750 jam/bulan, sleep setelah 15 menit idle |
-| [Koyeb](https://www.koyeb.com) | Support Docker, free tier permanen |
-| [Railway](https://railway.app) | Free plan + $1 credit/bulan |
-
-Contoh deploy ke **Render**:
-1. Push repo ke GitHub
-2. New → Web Service → Connect repo
-3. Build: `npm install && npm run build`
-4. Start: `npm start`
-5. Atau pilih **Docker**
+```
+harpitnas-api/
+├── src/
+│   ├── index.ts
+│   ├── types/
+│   ├── routes/kalender.ts
+│   ├── services/
+│   │   ├── cache.ts
+│   │   ├── github.ts
+│   │   └── kecepit.ts
+│   ├── middleware/errorHandler.ts
+│   └── utils/date.ts
+├── scripts/test-kecepit.ts
+├── Dockerfile
+├── Dockerfile.prebuilt
+├── docker-compose.yml
+└── README.md
+```
 
 ---
 
 ## License
 
 MIT
-
----
 
 ## Kredit
 

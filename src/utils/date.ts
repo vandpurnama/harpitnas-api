@@ -14,8 +14,19 @@ const DAY_NAMES_ID = [
   'Sabtu',
 ] as const;
 
-export function isWeekend(date: Date): boolean {
+/** Mode minggu kerja */
+export type Workweek = 'mon-fri' | 'mon-sat';
+
+/**
+ * Apakah tanggal termasuk akhir pekan, tergantung mode workweek.
+ * - mon-fri: Sabtu + Minggu
+ * - mon-sat: hanya Minggu
+ */
+export function isWeekend(date: Date, workweek: Workweek = 'mon-fri'): boolean {
   const day = date.getDay(); // 0 = Minggu, 6 = Sabtu
+  if (workweek === 'mon-sat') {
+    return day === 0; // hanya Minggu
+  }
   return day === 0 || day === 6;
 }
 
@@ -52,4 +63,8 @@ export function isValidMonth(month: number): boolean {
 
 export function isValidYear(year: number): boolean {
   return Number.isInteger(year) && year >= 2000 && year <= 2100;
+}
+
+export function isValidWorkweek(value: string): value is Workweek {
+  return value === 'mon-fri' || value === 'mon-sat';
 }

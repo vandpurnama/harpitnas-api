@@ -48,12 +48,12 @@ app.get('/health', (_req, res) => {
 app.get('/', (_req, res) => {
   res.json({
     name: 'Harpitnas API',
-    version: '1.1.2',
+    version: '1.2.0',
     description: 'API kalender libur nasional & cuti bersama Indonesia + deteksi hari kecepit',
     endpoints: {
       'GET /api/kalender': 'Daftar tahun tersedia (index)',
       'GET /api/kalender/:year': 'Data libur + cuti bersama (support ?month=&type=)',
-      'GET /api/kalender/:year/kecepit': 'Daftar hari kecepit (support ?month=)',
+      'GET /api/kalender/:year/kecepit': 'Daftar hari kecepit (support ?month=&workweek=mon-fri|mon-sat)',
       'GET /health': 'Health check + cache stats',
     },
     source: 'https://github.com/vandpurnama/harpitnas',
