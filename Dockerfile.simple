@@ -1,0 +1,33 @@
+# Versi sederhana (single-stage) untuk free tier sangat terbatas (256MB)
+# Gunakan ini jika Dockerfile multi-stage masih OOM / gagal di Back4app
+FROM node:20-alpine
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV NODE_OPTIONS="--max-old-space-size=180"
+
+COPY package.json package-lock.json* ./
+COPY tsconfig.json ./
+COPY src ./src
+
+# Install semua → build → prune devDependencies
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; \
+    else npm install --no-audit --no-fund; fi \
+    && npm run build \
+    && npm prune --omit=dev \
+    && npm cache clean --force \
+    && apk add --no-cache wget \
+    && addgroup -g 1001 -S nodejs \
+    && adduser -S harpitnas -u 1001 -G nodejs \
+    && chown -R harpitnas:nodejs /app
+
+USER harpitnas
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/health || exit 1
+
+CMD ["node", "dist/index.js"]
