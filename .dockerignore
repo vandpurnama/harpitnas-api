@@ -1,5 +1,4 @@
 node_modules
-dist
 .git
 .gitignore
 *.md
@@ -13,3 +12,7 @@ scripts
 *.log
 .vscode
 .idea
+Dockerfile*
+.dockerignore
+# dist HARUS ikut di-copy untuk Back4app free tier (prebuilt)
+# jangan ignore dist

@@ -1,0 +1,49 @@
+# TIER 2: paling ringan di server jika kamu build "dist/" di lokal
+# atau di CI (lihat .github/workflows/docker-publish.yml untuk opsi
+# yang bahkan tidak perlu build APAPUN di server / Tier 1).
+#
+# Cara pakai:
+#   npm ci
+#   npm run build          # -> menghasilkan folder dist/
+#   git add -f dist/
+#   cp Dockerfile.prebuilt Dockerfile
+#   git commit -m "build: precompiled dist" && git push
+#
+# Server HANYA menjalankan "npm ci --omit=dev" untuk 6 paket
+# produksi (axios, cors, express, express-rate-limit, helmet,
+# morgan) - resiko OOM sangat kecil, tidak butuh TypeScript sama
+# sekali di container.
+FROM node:20-alpine
+
+WORKDIR /app
+
+ENV npm_config_fund=false
+ENV npm_config_audit=false
+ENV npm_config_fetch_retries=5
+ENV npm_config_fetch_retry_mintimeout=20000
+
+COPY package.json package-lock.json ./
+
+# npm ci --omit=dev: hanya dependencies produksi, tidak perlu resolusi
+# dependency (pakai lockfile apa adanya) -> paling hemat RAM & waktu.
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+
+COPY dist ./dist
+
+RUN apk add --no-cache wget \
+    && addgroup -g 1001 -S nodejs \
+    && adduser -S harpitnas -u 1001 -G nodejs \
+    && chown -R harpitnas:nodejs /app
+
+USER harpitnas
+
+# Cap memori runtime HANYA di sini, SETELAH instalasi selesai -
+# supaya tidak ikut membatasi proses "npm ci" di atas.
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV NODE_OPTIONS="--max-old-space-size=160"
+
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/health || exit 1
+CMD ["node", "dist/index.js"]
