@@ -8,47 +8,47 @@ npm error Exit handler never called!
 sh: tsc: not found
 ```
 
-Urutan kejadian yang paling sering:
+Urutan kejadian:
 
-1. Proses `npm install` / `npm ci` **dibunuh paksa (SIGKILL)** oleh OOM killer
-   karena container build kehabisan RAM — bukan error heap V8 biasa.
-   npm tidak sempat cleanup → muncul bug CLI `Exit handler never called!`.
+1. Proses `npm install/ci` **dibunuh paksa (SIGKILL) oleh OOM killer**
+   kernel karena container build kehabisan RAM — bukan error heap V8
+   biasa. npm tidak sempat menyelesaikan cleanup-nya sendiri sehingga
+   muncul bug CLI `Exit handler never called!`.
 2. Karena instalasi terputus, `devDependencies` (termasuk `typescript`)
-   tidak lengkap terpasang.
-3. Step berikutnya (`npm run build` → `tsc`) gagal: `sh: tsc: not found`.
+   tidak lengkap ter-install.
+3. Step berikutnya (`npm run build` -> `tsc`) gagal karena binary
+   `tsc` memang tidak ada: `sh: tsc: not found`.
 
-Penyebab lain yang sering muncul di PaaS:
+**Cek tambahan sebelum lanjut:** bentuk log kamu (`if [ -f
+package-lock.json ]; then npm ci; else npm install; fi`) khas
+Nixpacks/Railpack (build otomatis Railway), bukan isi `Dockerfile`
+di repo ini. Kemungkinan platform hosting **tidak memakai
+`Dockerfile` custom sama sekali**. Buka pengaturan service di
+platform kamu → cari opsi **Builder** → pastikan diset ke
+`Dockerfile`, bukan auto-detect/Nixpacks. Kalau ini tidak dicek,
+perbaikan apa pun di `Dockerfile` tidak akan pernah terpakai.
 
-- Platform menyuntik `NODE_ENV=production` saat **build** → `npm` mengabaikan
-  `devDependencies` → TypeScript tidak terpasang.
-- `NODE_OPTIONS=--max-old-space-size=...` di-set terlalu kecil **saat install**
-  (membatasi proses npm sendiri, justru memicu OOM).
+## Pilihan solusi (dari paling ringan di server)
 
----
+### Tier 1 — Build di GitHub Actions, server tinggal pull image (PALING DIREKOMENDASIKAN)
 
-## Strategi deploy (pilih salah satu)
+Server tidak menjalankan build apa pun. Kompilasi TypeScript & build
+image dilakukan gratis di runner GitHub (RAM jauh lebih besar).
 
-### Tier 1 — Image prebuilt via GitHub Actions → GHCR (paling direkomendasikan)
+1. Push project ini (sudah termasuk `.github/workflows/docker-publish.yml`)
+   ke branch `main` di `vandpurnama/harpitnas-api`.
+2. Actions otomatis jalan, menghasilkan image di:
+   `ghcr.io/vandpurnama/harpitnas-api:latest`
+3. Di platform hosting, pilih mode **"Deploy from Docker Image"**
+   (bukan "Build from Dockerfile") dan isi image di atas. Kalau
+   package GHCR privat, platform akan minta login — bikin Personal
+   Access Token GitHub dengan scope `read:packages`, atau ubah
+   visibility package ke Public via Settings di halaman package GitHub.
 
-Build TypeScript & Docker image di **GitHub Actions** (RAM besar, gratis
-untuk repo publik/privat dalam batas wajar). Platform hosting hanya
-`docker pull` + run — **tidak build di server**.
+Cocok untuk: Back4app, Render, Railway, Fly.io, VPS mana pun yang
+bisa `docker pull` + `docker run`.
 
-1. Push repo ke GitHub (pastikan workflow `.github/workflows/docker-publish.yml` ikut).
-2. Setelah workflow sukses, image ada di:
-   ```
-   ghcr.io/<username>/harpitnas-api:latest
-   ```
-3. Di platform hosting, pilih mode **Deploy from Docker Image** (bukan
-   “Build from Dockerfile”), isi image di atas.
-4. Jika package GHCR privat: buat Personal Access Token (`read:packages`)
-   atau ubah visibility package ke Public (Settings → Package).
-
-Cocok untuk: Back4app, Render, Railway, Fly.io, VPS, dll.
-
-### Tier 2 — `Dockerfile.prebuilt` (platform wajib build dari Dockerfile)
-
-Build di komputer lokal, commit folder `dist/`:
+### Tier 2 — `Dockerfile.prebuilt` (kalau platform WAJIB build dari Dockerfile)
 
 ```bash
 npm ci
@@ -60,58 +60,85 @@ git commit -m "build: precompiled dist untuk deploy ringan"
 git push
 ```
 
-Server hanya menjalankan `npm ci --omit=dev` untuk dependency produksi
-(axios, cors, express, express-rate-limit, helmet, morgan) — **tidak ada
-TypeScript di container**, risiko OOM sangat kecil.
+Server hanya menjalankan `npm ci --omit=dev` untuk 6 paket produksi
+(axios, cors, express, express-rate-limit, helmet, morgan) — tidak
+ada TypeScript sama sekali di container, resiko OOM sangat kecil.
 
-Ulangi `npm run build` + commit `dist/` setiap ada perubahan di `src/`.
-Kalau sering lupa, pakai **Tier 1** (otomatis via CI).
+Ingat: ulangi `npm run build` & commit ulang `dist/` setiap kali ada
+perubahan di `src/`. Kalau lupa, Tier 1 lebih aman karena otomatis.
 
-### Tier 3 — Build TypeScript langsung di server (paling berisiko)
+### Tier 3 — Tetap build TypeScript langsung di server
 
-Hanya jika Tier 1 dan Tier 2 tidak memungkinkan. `Dockerfile` multi-stage
-sudah diperbaiki:
+`Dockerfile` di paket ini sudah saya perbaiki dibanding versi lama:
 
-- `NODE_OPTIONS` **hanya** di tahap runtime (tidak membatasi `npm install`)
-- `npm_config_include=dev` — jaring pengaman jika `NODE_ENV=production` disuntik saat build
-- Retry npm untuk jaringan tidak stabil
-- `npm ci --include=dev` jika lockfile ada
+- `NODE_OPTIONS` (pembatas memori) **dipindah** supaya hanya berlaku
+  di tahap runtime, tidak lagi ikut membatasi proses `npm install`
+  sendiri (yang justru bisa memicu ulang bug yang sama).
+- `npm_config_include=dev` dipasang eksplisit — jaring pengaman kalau
+  platform menyuntik `NODE_ENV=production` saat build (penyebab lain
+  yang sangat umum untuk `tsc: not found` di banyak PaaS).
+- Retry config npm (`fetch-retries`, dst.) ditambahkan untuk jaringan
+  yang tidak stabil.
+- Tetap pakai `npm ci` kalau lockfile ada (lebih hemat RAM daripada
+  `npm install` karena tidak melakukan resolusi dependency).
 
-Di server dengan RAM sangat kecil (mis. 256 MB) opsi ini tetap rawan OOM.
+Ini pilihan paling berisiko untuk server RAM sangat kecil — hanya
+pakai kalau Tier 1 dan Tier 2 benar-benar tidak memungkinkan.
 
----
+## Catatan lain (dari audit sebelumnya, belum diperbaiki)
 
-## Railway tanpa Docker (alternatif)
+Belum termasuk di paket ini — di luar topik error build kali ini,
+tapi masih terbuka dari audit terakhir kalau mau dikerjakan lain waktu:
 
-Jika Docker build tetap gagal di Railway:
+1. `hitungHariKecepit()` di `src/services/kecepit.ts` tidak memuat
+   data libur tahun sebelum/sesudahnya, jadi deteksi kecepit di
+   sekitar 31 Des/1 Jan bisa salah.
+2. `scripts/test-kecepit.ts` berada di luar `rootDir` tsconfig — bisa
+   memicu error TS6059 kalau dijalankan lewat `ts-node` langsung.
 
-1. Settings service → **Builder: Nixpacks** (atau Railpack), **bukan Dockerfile**
-2. Build Command: `npm ci && npm run build`
-3. Start Command: `npm start`
-4. Pastikan Node 20
+Beri tahu saya kalau mau saya perbaiki juga.
 
-Kadang lebih stabil daripada Docker di free tier.
+## Update — percobaan Tier 3 gagal lagi (timeout, bukan OOM lagi)
 
----
+Log terbaru:
+```
+[builder 4/8] RUN if [ -f package-lock.json ]; ...
+Build Failed: ... DeadlineExceeded: context deadline exceeded
+```
 
-## Checklist sebelum deploy
+Konfirmasi: platform kamu **memang** memakai `Dockerfile` custom
+(logic `if/else`-nya persis dari file ini) — jadi bukan Nixpacks.
+Tapi tahap install `devDependencies` (TypeScript dkk, ratusan paket
+transitif) sekarang kena **batas waktu build**, bukan OOM lagi. Dua
+kegagalan berbeda di tahap yang sama = builder platform ini memang
+tidak sanggup untuk install devDependencies penuh, dari sisi RAM
+maupun waktu.
 
-- [ ] `package-lock.json` versi sinkron dengan `package.json` (1.1.2)
-- [ ] Pilih Tier 1 / 2 / 3 sesuai platform
-- [ ] Env opsional: `PORT`, `NODE_ENV=production`, `CORS_ORIGIN`, `RATE_LIMIT_MAX`
-- [ ] Health check path: `/health`
+**Kesimpulan: pakai Tier 2 (`Dockerfile.prebuilt`) sekarang.**
+Langkah persis, jalankan di Termux kamu:
 
----
+```bash
+cd harpitnas-api
+pkg install nodejs -y        # kalau belum ada nodejs di Termux
+npm ci
+npm run build                 # -> folder dist/ terbentuk
+git add -f dist/
+cp Dockerfile.prebuilt Dockerfile
+git add Dockerfile package-lock.json
+git commit -m "build: precompiled dist, Dockerfile ringan (fix timeout build)"
+git push
+```
 
-## Status fitur kode (sudah ada)
+Setelah ini, container di server platform HANYA menjalankan `npm ci
+--omit=dev` untuk 6 paket produksi (tanpa TypeScript sama sekali) —
+jauh lebih kecil kemungkinan kena OOM atau timeout lagi.
 
-| Fitur | Status |
-|-------|--------|
-| Deteksi hari kecepit | ✅ |
-| Cross-year boundary (31 Des / 1 Jan) | ✅ `getYearDataOptional` + merge map |
-| Filter `?month=` & `?type=` | ✅ |
-| Cache in-memory 1 jam | ✅ |
-| Rate limit, Helmet, CORS | ✅ |
-| Graceful shutdown | ✅ |
+Retry config npm di `Dockerfile.prebuilt` juga sudah dikecilkan
+(2x retry, timeout pendek) — sengaja supaya kalau memang gagal,
+gagalnya cepat, bukan menghabiskan sisa waktu build platform.
 
-Tidak perlu mengubah logic API untuk masalah deploy ini.
+Kalau Tier 2 masih tetap timeout/OOM meski cuma 6 paket ringan,
+kemungkinan besar jaringan dari builder platform ke npm registry
+memang sangat dibatasi (bukan soal ukuran dependency lagi) — solusi
+satu-satunya yang pasti aman di titik itu adalah Tier 1 (image sudah
+jadi dari GitHub Actions, server tidak install/compile apa pun).

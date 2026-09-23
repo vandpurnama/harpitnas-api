@@ -19,8 +19,13 @@ WORKDIR /app
 
 ENV npm_config_fund=false
 ENV npm_config_audit=false
-ENV npm_config_fetch_retries=5
-ENV npm_config_fetch_retry_mintimeout=20000
+# Retry dikecilkan sengaja: kalau builder ini timeout/deadline pendek,
+# lebih baik npm GAGAL CEPAT (lalu Docker retry build dari awal jika
+# platform mendukung) daripada menghabiskan sisa waktu build untuk
+# retry berkali-kali dengan jeda panjang.
+ENV npm_config_fetch_retries=2
+ENV npm_config_fetch_retry_mintimeout=3000
+ENV npm_config_fetch_retry_maxtimeout=10000
 
 COPY package.json package-lock.json ./
 

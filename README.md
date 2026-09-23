@@ -220,19 +220,22 @@ harpitnas-api/
 
 ---
 
-## Deploy
+## Deploy Gratis (tanpa kartu kredit)
 
-Lihat panduan lengkap di **[DEPLOY-GUIDE.md](./DEPLOY-GUIDE.md)** (3 tier).
+Rekomendasi platform free tier yang mendukung Node.js / Docker:
 
-Ringkas:
+| Platform | Catatan |
+|----------|---------|
+| [Render](https://render.com) | Paling praktis. 750 jam/bulan, sleep setelah 15 menit idle |
+| [Koyeb](https://www.koyeb.com) | Support Docker, free tier permanen |
+| [Railway](https://railway.app) | Free plan + $1 credit/bulan |
 
-| Tier | Cara | Cocok untuk |
-|------|------|-------------|
-| **1** | GitHub Actions → image GHCR | Back4app, Railway, Render, Fly, VPS |
-| **2** | Build lokal + commit `dist/` + `Dockerfile.prebuilt` | Platform yang wajib build dari Dockerfile |
-| **3** | Build TypeScript di server (`Dockerfile`) | Hanya jika Tier 1/2 tidak bisa |
-
-**Direkomendasikan: Tier 1** — build di GitHub (RAM besar), hosting hanya pull image.
+Contoh deploy ke **Render**:
+1. Push repo ke GitHub
+2. New → Web Service → Connect repo
+3. Build: `npm install && npm run build`
+4. Start: `npm start`
+5. Atau pilih **Docker**
 
 ---
 
