@@ -10,10 +10,10 @@ const router = Router();
  * GET /api/kalender
  * Mengembalikan index.json (daftar tahun yang tersedia)
  */
-router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const index = await getIndexData();
-    res.set('Cache-Control', 'public, max-age=300'); // 5 menit
+    res.set('Cache-Control', 'public, max-age=300');
     res.json(index);
   } catch (err) {
     next(err);
@@ -26,32 +26,35 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
  *   - month=1..12   → filter bulan
  *   - type=national_holiday|joint_leave|all  (default: all)
  */
-router.get('/:year', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:year', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const year = Number(req.params.year);
     if (!isValidYear(year)) {
-      return res.status(400).json({ error: 'Tahun tidak valid (rentang 2000–2100)' });
+      res.status(400).json({ error: 'Tahun tidak valid (rentang 2000–2100)' });
+      return;
     }
 
     const monthParam = req.query.month ? Number(req.query.month) : undefined;
     if (monthParam !== undefined && !isValidMonth(monthParam)) {
-      return res.status(400).json({ error: 'Parameter month harus 1–12' });
+      res.status(400).json({ error: 'Parameter month harus 1–12' });
+      return;
     }
 
     const typeParam = (req.query.type as string) || 'all';
     if (!['national_holiday', 'joint_leave', 'all'].includes(typeParam)) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Parameter type harus salah satu: national_holiday, joint_leave, all',
       });
+      return;
     }
 
     const yearData = await getYearData(year);
 
-    res.set('Cache-Control', 'public, max-age=300'); // 5 menit
+    res.set('Cache-Control', 'public, max-age=300');
 
-    // Jika tidak ada filter, kembalikan data asli
     if (monthParam === undefined && typeParam === 'all') {
-      return res.json(yearData);
+      res.json(yearData);
+      return;
     }
 
     const filtered = filterHolidays(yearData, {
@@ -82,19 +85,20 @@ router.get('/:year', async (req: Request, res: Response, next: NextFunction) => 
  * Cross-year: otomatis fetch tahun ±1 (jika tersedia) agar boundary
  * 31 Des / 1 Jan terklasifikasi dengan benar.
  */
-router.get('/:year/kecepit', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:year/kecepit', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const year = Number(req.params.year);
     if (!isValidYear(year)) {
-      return res.status(400).json({ error: 'Tahun tidak valid (rentang 2000–2100)' });
+      res.status(400).json({ error: 'Tahun tidak valid (rentang 2000–2100)' });
+      return;
     }
 
     const monthParam = req.query.month ? Number(req.query.month) : undefined;
     if (monthParam !== undefined && !isValidMonth(monthParam)) {
-      return res.status(400).json({ error: 'Parameter month harus 1–12' });
+      res.status(400).json({ error: 'Parameter month harus 1–12' });
+      return;
     }
 
-    // Fetch tahun utama + tetangga (opsional, tidak error jika 404)
     const [yearData, prevYearData, nextYearData] = await Promise.all([
       getYearData(year),
       getYearDataOptional(year - 1),
@@ -108,7 +112,7 @@ router.get('/:year/kecepit', async (req: Request, res: Response, next: NextFunct
       nextYearData
     );
 
-    res.set('Cache-Control', 'public, max-age=300'); // 5 menit
+    res.set('Cache-Control', 'public, max-age=300');
 
     const response: KecepitResponse = {
       year,
